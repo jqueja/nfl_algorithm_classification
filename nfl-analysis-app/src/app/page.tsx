@@ -13,12 +13,13 @@ export default function Home() {
   const [responseVar, setResponseVar] = useState<SingleValue<ColumnOption>>(null);
   const [supportVars, setSupportVars] = useState<MultiValue<ColumnOption>>([]);
   const [result, setResult] = useState<ResultType | null>(null);
+  const [contextResponse, setContextResponse] = useState<string | null>(null);
+  const [isLoadingLLM, setIsLoadingLLM] = useState<boolean>(false);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Upload file to backend
     const formData = new FormData();
     formData.append("file", file);
     const uploadRes = await fetch("http://localhost:8000/upload-csv", {
@@ -28,7 +29,6 @@ export default function Home() {
     const uploadData = await uploadRes.json();
     setFilename(uploadData.filename);
 
-    // Parse for column selection
     Papa.parse(file, {
       header: true,
       complete: (results: ParseResult<Record<string, unknown>>) => {
@@ -38,6 +38,7 @@ export default function Home() {
         setResponseVar(null);
         setSupportVars([]);
         setResult(null);
+        setContextResponse(null);
       },
     });
   };
@@ -60,9 +61,33 @@ export default function Home() {
 
       const data = await res.json();
       setResult(data);
+      setContextResponse(null);
     } catch (error) {
       console.error("Error:", error);
       setResult({ error: "Failed to fetch feature importance." });
+    }
+  };
+
+  const runLLMContext = async () => {
+    if (!result || typeof result !== "object") return;
+    setIsLoadingLLM(true);
+    try {
+      const res = await fetch("http://localhost:8000/contextualize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ importances: result }),
+      });
+      const data = await res.json();
+      if ("response" in data) {
+        setContextResponse(data.response);
+      } else {
+        setContextResponse(`⚠️ Error: ${data.error || JSON.stringify(data)}`);
+      }
+    } catch (error) {
+      console.error("Error:", error);
+      setContextResponse("⚠️ Failed to send data to LLM.");
+    } finally {
+      setIsLoadingLLM(false);
     }
   };
 
@@ -119,25 +144,34 @@ export default function Home() {
         <div className="mt-10 w-full max-w-xl">
           <h2 className="text-xl font-semibold mb-4 text-gray-800">Feature Importances</h2>
           <ul className="bg-gray-100 border rounded p-4">
-            {typeof result === 'object' && !Array.isArray(result) ? (
-              Object.entries(result)
-                .sort((a, b) => {
-                  const aVal = typeof a[1] === 'number' ? a[1] : -Infinity;
-                  const bVal = typeof b[1] === 'number' ? b[1] : -Infinity;
-                  return bVal - aVal;
-                })
-                .map(([key, value]) => (
-                  <li key={key} className="py-1 border-b last:border-none">
-                    <strong>{key}:</strong>{' '}
-                    {typeof value === 'number' ? value.toFixed(4) : `⚠️ ${String(value)}`}
-                  </li>
-                ))
-            ) : (
-              <li className="text-red-600 font-semibold">
-                ⚠️ Unexpected response: {JSON.stringify(result)}
-              </li>
-            )}
+            {Object.entries(result)
+              .sort((a, b) => {
+                const aVal = typeof a[1] === "number" ? a[1] : -Infinity;
+                const bVal = typeof b[1] === "number" ? b[1] : -Infinity;
+                return bVal - aVal;
+              })
+              .map(([key, value]) => (
+                <li key={key} className="py-1 border-b last:border-none">
+                  <strong>{key}:</strong> {typeof value === "number" ? value.toFixed(4) : `⚠️ ${String(value)}`}
+                </li>
+              ))}
           </ul>
+
+          <button
+            onClick={runLLMContext}
+            className="mt-6 bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700"
+          >
+            Analyze with LLM
+          </button>
+
+          <div className="mt-6 bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded shadow min-h-[100px]">
+            <h3 className="text-lg font-semibold mb-2 text-yellow-700">LLM Analysis</h3>
+            {isLoadingLLM ? (
+              <p className="text-gray-500 italic">Analyzing with LLM, please wait...</p>
+            ) : (
+              contextResponse && <p className="whitespace-pre-line text-sm text-gray-800">{contextResponse}</p>
+            )}
+          </div>
         </div>
       )}
     </main>

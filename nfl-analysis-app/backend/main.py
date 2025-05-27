@@ -9,7 +9,7 @@ from sklearn.model_selection import train_test_split
 import pandas as pd
 import os
 import shutil
-
+import requests
 app = FastAPI()
 
 # Enable CORS (for localhost dev)
@@ -19,6 +19,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+OLLAMA_API_URL = "http://localhost:11434/api/generate"
 
 UPLOAD_DIR = "backend/uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -80,6 +82,53 @@ def compute_feature_importance(payload: FeatureRequest):
     )
 
     return {f: round(i, 6) for f, i in sorted_importances}
+
+class LLMRequest(BaseModel):
+    importances: Dict[str, float]
+
+
+# Define a function to interact with the Ollama model
+def query_ollama(prompt, model="deepseek-r1:7b"):
+    payload = {
+        "model": model,
+        "prompt": prompt,
+        "stream": False
+    }
+    response = requests.post(OLLAMA_API_URL, json=payload)
+    print(response)
+    if response.status_code == 200:
+        return response.json()["response"]
+    else:
+        raise Exception(f"Error: {response.status_code}, {response.text}")
+
+
+@app.get("/test-llm")
+def test_llm():
+    try:
+        content = query_ollama("Say hello from DeepSeek.")
+        return {"status": "LLM is reachable", "response": content}
+    except Exception as e:
+        return {"status": "LLM is NOT reachable", "error": str(e)}
+
+
+@app.post("/contextualize")
+def contextualize_with_llm(payload: LLMRequest):
+    importance_text = "\n".join([f"{k}: {v}" for k, v in payload.importances.items()])
+    prompt = (
+        "You are an expert data scientist. Given the following feature importances, "
+        "contextualize them in a way that a non-technical person can understand.\n\n"
+        "Feature Importances:\n"
+        + importance_text
+        + "\n\n"
+        "Please provide a clear and concise explanation of the most important features "
+        "and their significance in the context of the data."
+    )
+    try:
+        print("Before the query_ollama call")
+        content = query_ollama(prompt)
+        return {"response": content}
+    except Exception as e:
+        return {"error": str(e)}
 
 @app.get("/health")
 def health_check():         
