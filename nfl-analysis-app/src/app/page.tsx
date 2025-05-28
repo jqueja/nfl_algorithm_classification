@@ -69,13 +69,17 @@ export default function Home() {
   };
 
   const runLLMContext = async () => {
-    if (!result || typeof result !== "object") return;
+    if (!result || typeof result !== "object" || !responseVar) return;
     setIsLoadingLLM(true);
     try {
+      const enriched = {
+        importances: result,
+        responseVar: responseVar.value,
+      };
       const res = await fetch("http://localhost:8000/contextualize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ importances: result }),
+        body: JSON.stringify(enriched),
       });
       const data = await res.json();
       if ("response" in data) {
@@ -93,7 +97,7 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-white text-black flex flex-col items-center py-12 px-4">
-      <h1 className="text-3xl font-bold mb-6 text-red-600">NFL Variable Selector</h1>
+      <h1 className="text-3xl font-bold mb-6 text-red-600">NFL Algorithm Project</h1>
 
       <div className="bg-white border-2 border-blue-600 rounded-xl p-6 w-full max-w-xl shadow-md">
         <label className="block text-lg font-semibold mb-2">Upload CSV</label>
